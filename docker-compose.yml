@@ -1,0 +1,69 @@
+version: '2'
+
+services:
+  nextcloud:
+    image: nextcloud
+    container_name: nextcloud
+    restart: unless-stopped
+    ports:
+      - 8084:80
+    volumes:
+      - /data-crypt/nextcloud/data:/var/www/html
+    environment:
+      - UPLOAD_MAX_SIZE=10G
+      - MYSQL_PASSWORD=XXX
+      - MYSQL_DATABASE=XXX
+      - MYSQL_USER=XXX
+      - MYSQL_HOST=mariadb
+      - NEXTCLOUD_TRUSTED_DOMAINS=nextcloud.tristanhoffmann.de,owncloud.tristanhoffmann.de
+      - APACHE_DISABLE_REWRITE_IP=1
+    networks:
+      - mariadb_network
+      - traefik_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.tristanhoffmann-nextcloud.rule=Host(`nextcloud.tristanhoffmann.de`) || Host(`owncloud.tristanhoffmann.de`)"
+      - "traefik.http.routers.tristanhoffmann-nextcloud.entrypoints=https"
+      - "traefik.http.routers.tristanhoffmann-nextcloud.tls.certresolver=letsencrypt"
+      - "traefik.http.middlewares.nc-rep.redirectregex.regex=https://(.*)/.well-known/(card|cal)dav"
+      - "traefik.http.middlewares.nc-rep.redirectregex.replacement=https://$$1/remote.php/dav/"
+      - "traefik.http.middlewares.nc-rep.redirectregex.permanent=true"
+      - "traefik.http.middlewares.nc-header.headers.referrerPolicy=no-referrer"
+      - "traefik.http.middlewares.nc-header.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.nc-header.headers.forceSTSHeader=true"
+      - "traefik.http.middlewares.nc-header.headers.stsPreload=true"
+      - "traefik.http.middlewares.nc-header.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.nc-header.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.nc-header.headers.customRequestHeaders.X-Forwarded-Proto=https"
+      - "traefik.http.routers.tristanhoffmann-nextcloud.middlewares=nc-rep,nc-header"
+      - "traefik.http.routers.tristanhoffmann-nextcloud-local.rule=Host(`debian`) && PathPrefix(`/nextcloud`)"
+      - "traefik.http.routers.tristanhoffmann-nextcloud-local.entrypoints=https"
+      - "traefik.http.routers.tristanhoffmann-nextcloud-local.tls=true"
+      - "traefik.http.routers.tristanhoffmann-nextcloud-local.middlewares=nextcloud-strip"
+      - "traefik.http.middlewares.nextcloud-strip.stripprefix.prefixes=/nextcloud"
+  collabora:
+    image: collabora/code
+    container_name: collabora_app
+    networks:
+      - traefik_network
+    cap_add:
+      - MKNOD
+    environment:
+      - domain=nextcloud.tristanhoffmann.de
+      - username=XXX
+      - password=XXX
+      - "extra_params=--o:ssl.enable=false --o:ssl.termination=true"
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.collabora.entrypoints=https"
+      - "traefik.http.routers.collabora.rule=(Host(`collabora.tristanhoffmann.de`))"
+      - "traefik.http.routers.collabora.tls=true"
+      - "traefik.http.routers.collabora.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.collabora.service=collabora"
+      - "traefik.http.services.collabora.loadbalancer.server.port=9980"
+networks:
+  mariadb_network:
+    external: true
+  traefik_network:
+    external: true
